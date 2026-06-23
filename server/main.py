@@ -1,7 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from pydantic import BaseModel
+from datetime import datetime, timedelta
+from statistics import median
 from mock_data import inventory_items, orders, demand_forecasts, backlog_items, spending_summary, monthly_spending, category_spending, recent_transactions, purchase_orders
 
 app = FastAPI(title="Factory Inventory Management System")
@@ -119,6 +121,23 @@ class CreatePurchaseOrderRequest(BaseModel):
     unit_cost: float
     expected_delivery_date: str
     notes: Optional[str] = None
+
+class RestockingRecommendation(BaseModel):
+    id: str
+    item_sku: str
+    item_name: str
+    current_demand: int
+    forecasted_demand: int
+    trend: str
+    period: str
+    unit_cost: float
+    restock_quantity: int
+    total_cost: float
+    price_source: str  # "inventory" | "estimated"
+
+class RestockingOrderRequest(BaseModel):
+    items: List[dict]  # {sku, name, quantity, unit_price}
+    total_value: float
 
 # API endpoints
 @app.get("/")
@@ -304,6 +323,75 @@ def get_monthly_trends():
     result.sort(key=lambda x: x['month'])
     return result
 
+# SKU prefix → inventory category, used for price estimation when no exact SKU match
+_SKU_CATEGORY_MAP = {
+    "WDG": "Controllers", "BRG": "Actuators", "GSK": "Sensors",
+    "MTR": "Actuators", "FLT": "Sensors", "VLV": "Sensors",
+    "SNR": "Sensors", "CTL": "Controllers",
+}
+
+@app.get("/api/restocking/recommendations", response_model=List[RestockingRecommendation])
+def get_restocking_recommendations():
+    """Get demand forecast items enriched with pricing for restocking budget planning."""
+    inventory_by_sku = {item["sku"]: item["unit_cost"] for item in inventory_items}
+
+    # Compute median unit_cost per category for fallback pricing
+    category_costs: dict = {}
+    for item in inventory_items:
+        category_costs.setdefault(item["category"], []).append(item["unit_cost"])
+    category_median = {cat: median(costs) for cat, costs in category_costs.items()}
+
+    trend_order = {"increasing": 0, "stable": 1, "decreasing": 2}
+    result = []
+    for forecast in demand_forecasts:
+        sku = forecast["item_sku"]
+        if sku in inventory_by_sku:
+            unit_cost = inventory_by_sku[sku]
+            price_source = "inventory"
+        else:
+            prefix = sku.split("-")[0]
+            cat = _SKU_CATEGORY_MAP.get(prefix)
+            if cat and cat in category_median:
+                unit_cost = round(category_median[cat], 2)
+            else:
+                unit_cost = 50.0
+            price_source = "estimated"
+
+        restock_qty = forecast["forecasted_demand"]
+        total_cost = round(unit_cost * restock_qty, 2)
+        result.append({
+            **forecast,
+            "unit_cost": unit_cost,
+            "restock_quantity": restock_qty,
+            "total_cost": total_cost,
+            "price_source": price_source,
+        })
+
+    result.sort(key=lambda x: (trend_order.get(x["trend"], 99), -x["total_cost"]))
+    return result
+
+@app.post("/api/restocking/orders", response_model=Order, status_code=status.HTTP_201_CREATED)
+def create_restocking_order(request: RestockingOrderRequest):
+    """Submit a restocking order. Appends to in-memory orders with status 'Submitted'."""
+    new_id = str(len(orders) + 1)
+    order_number = f"RST-{new_id.zfill(4)}"
+    now = datetime.utcnow()
+    new_order = {
+        "id": new_id,
+        "order_number": order_number,
+        "customer": "Internal Restock",
+        "items": request.items,
+        "status": "Submitted",
+        "order_date": now.isoformat(),
+        "expected_delivery": (now + timedelta(days=14)).isoformat(),
+        "total_value": request.total_value,
+        "warehouse": None,
+        "category": None,
+        "actual_delivery": None,
+    }
+    orders.append(new_order)
+    return new_order
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8002)
