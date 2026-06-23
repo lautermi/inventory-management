@@ -2,7 +2,7 @@
   <div class="restocking">
     <!-- Page header -->
     <div class="page-header">
-      <h2>{{ t('nav.restocking') }}</h2>
+      <h2>{{ t("nav.restocking") }}</h2>
       <p>Recommended restocking based on demand forecasts</p>
     </div>
 
@@ -12,10 +12,19 @@
         <h3 class="card-title">Budget</h3>
         <span class="budget-display">${{ budget.toLocaleString() }}</span>
       </div>
-      <input type="range" min="0" max="50000" step="500" v-model.number="budget" class="budget-slider" />
+      <input
+        type="range"
+        min="0"
+        max="50000"
+        step="500"
+        v-model.number="budget"
+        class="budget-slider"
+      />
       <div class="budget-meta">
         <span>$0</span>
-        <span class="budget-selected-total">Selected: ${{ selectedTotal.toLocaleString() }}</span>
+        <span class="budget-selected-total"
+          >Selected: ${{ selectedTotal.toLocaleString() }}</span
+        >
         <span>$50,000</span>
       </div>
     </div>
@@ -24,7 +33,6 @@
     <div v-if="loading" class="loading">Loading...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else class="recommendations-section">
-
       <!-- Section header with Place Order button -->
       <div class="section-header">
         <h3 class="card-title">
@@ -36,13 +44,14 @@
           :disabled="placing"
           class="btn-place-order"
         >
-          {{ placing ? 'Placing Order...' : 'Place Order' }}
+          {{ placing ? "Placing Order..." : "Place Order" }}
         </button>
       </div>
 
       <!-- Success banner -->
       <div v-if="orderSuccess" class="order-success-banner">
-        Order placed successfully! Check the Orders tab for status and delivery date.
+        Order placed successfully! Check the Orders tab for status and delivery
+        date.
       </div>
 
       <!-- Recommendations grid -->
@@ -50,11 +59,26 @@
         <div
           v-for="item in recommendations"
           :key="item.id"
-          :class="['recommendation-card', { 'within-budget': isWithinBudget(item), 'over-budget': !isWithinBudget(item) }]"
+          :class="[
+            'recommendation-card',
+            {
+              'within-budget': isWithinBudget(item),
+              'over-budget': !isWithinBudget(item),
+            },
+          ]"
         >
           <div class="rec-header">
             <span class="rec-sku">{{ item.item_sku }}</span>
-            <span :class="['badge', item.trend === 'increasing' ? 'success' : item.trend === 'stable' ? 'info' : 'warning']">
+            <span
+              :class="[
+                'badge',
+                item.trend === 'increasing'
+                  ? 'success'
+                  : item.trend === 'stable'
+                    ? 'info'
+                    : 'warning',
+              ]"
+            >
               {{ item.trend }}
             </span>
           </div>
@@ -66,99 +90,107 @@
             </div>
             <div class="rec-stat">
               <span class="rec-stat-label">Forecasted</span>
-              <span class="rec-stat-value"><strong>{{ item.forecasted_demand }}</strong></span>
+              <span class="rec-stat-value"
+                ><strong>{{ item.forecasted_demand }}</strong></span
+              >
             </div>
             <div class="rec-stat">
               <span class="rec-stat-label">Unit Cost</span>
               <span class="rec-stat-value">
                 ${{ item.unit_cost.toFixed(2) }}
-                <span v-if="item.price_source === 'estimated'" class="est-badge">est.</span>
+                <span v-if="item.price_source === 'estimated'" class="est-badge"
+                  >est.</span
+                >
               </span>
             </div>
             <div class="rec-stat">
               <span class="rec-stat-label">Total Cost</span>
-              <span class="rec-stat-value cost-highlight">${{ item.total_cost.toLocaleString() }}</span>
+              <span class="rec-stat-value cost-highlight"
+                >${{ item.total_cost.toLocaleString() }}</span
+              >
             </div>
           </div>
-          <div v-if="!isWithinBudget(item)" class="over-budget-label">Over budget</div>
+          <div v-if="!isWithinBudget(item)" class="over-budget-label">
+            Over budget
+          </div>
         </div>
       </div>
-
     </div>
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
-import { api } from '../api'
-import { useI18n } from '../composables/useI18n'
+import { ref, computed, onMounted } from "vue";
+import { api } from "../api";
+import { useI18n } from "../composables/useI18n";
 
 export default {
-  name: 'Restocking',
+  name: "Restocking",
   setup() {
-    const { t } = useI18n()
-    const budget = ref(25000)
-    const recommendations = ref([])
-    const loading = ref(true)
-    const error = ref(null)
-    const placing = ref(false)
-    const orderSuccess = ref(false)
+    const { t } = useI18n();
+    const budget = ref(25000);
+    const recommendations = ref([]);
+    const loading = ref(true);
+    const error = ref(null);
+    const placing = ref(false);
+    const orderSuccess = ref(false);
 
     const loadRecommendations = async () => {
       try {
-        loading.value = true
-        error.value = null
-        recommendations.value = await api.getRestockingRecommendations()
+        loading.value = true;
+        error.value = null;
+        recommendations.value = await api.getRestockingRecommendations();
       } catch (err) {
-        error.value = 'Failed to load recommendations: ' + err.message
+        error.value = "Failed to load recommendations: " + err.message;
       } finally {
-        loading.value = false
+        loading.value = false;
       }
-    }
+    };
 
     // Greedy selection: iterate recommendations in priority order,
     // accumulate running total, include item only if it fits within budget
     const withinBudgetItems = computed(() => {
-      let running = 0
-      return recommendations.value.filter(item => {
+      let running = 0;
+      return recommendations.value.filter((item) => {
         if (running + item.total_cost <= budget.value) {
-          running += item.total_cost
-          return true
+          running += item.total_cost;
+          return true;
         }
-        return false
-      })
-    })
+        return false;
+      });
+    });
 
     const selectedTotal = computed(() =>
-      withinBudgetItems.value.reduce((sum, item) => sum + item.total_cost, 0)
-    )
+      withinBudgetItems.value.reduce((sum, item) => sum + item.total_cost, 0),
+    );
 
     // Check membership by id rather than reference equality (array is recomputed)
-    const isWithinBudget = (item) => withinBudgetItems.value.some(i => i.id === item.id)
+    const isWithinBudget = (item) =>
+      withinBudgetItems.value.some((i) => i.id === item.id);
 
     const placeOrder = async () => {
-      placing.value = true
-      orderSuccess.value = false
+      placing.value = true;
+      orderSuccess.value = false;
       try {
-        const items = withinBudgetItems.value.map(item => ({
+        const items = withinBudgetItems.value.map((item) => ({
           sku: item.item_sku,
           name: item.item_name,
           quantity: item.restock_quantity,
-          unit_price: item.unit_cost
-        }))
+          unit_price: item.unit_cost,
+        }));
         await api.createRestockingOrder({
           items,
-          total_value: selectedTotal.value
-        })
-        orderSuccess.value = true
+          total_value: selectedTotal.value,
+        });
+        orderSuccess.value = true;
       } catch (err) {
-        error.value = 'Failed to place order: ' + err.message
+        error.value = "Failed to place order: " + err.message;
       } finally {
-        placing.value = false
+        placing.value = false;
       }
-    }
+    };
 
-    onMounted(loadRecommendations)
+    onMounted(loadRecommendations);
 
     return {
       t,
@@ -171,10 +203,10 @@ export default {
       withinBudgetItems,
       selectedTotal,
       isWithinBudget,
-      placeOrder
-    }
-  }
-}
+      placeOrder,
+    };
+  },
+};
 </script>
 
 <style scoped>
@@ -264,7 +296,9 @@ export default {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 1rem;
-  transition: opacity 0.2s, border-color 0.2s;
+  transition:
+    opacity 0.2s,
+    border-color 0.2s;
 }
 
 .recommendation-card.within-budget {
